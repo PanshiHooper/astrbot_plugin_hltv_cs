@@ -89,8 +89,7 @@ class HltvCsUnified(Star):
 
         /player <选手名>           → 选手 Rating 数据
         /player <选手名> Trophies  → 奖杯、MVP、EVP、Top20
-        /player <选手名> MVP       → 仅 MVP 奖章
-        """
+"""
         # AstrBot 参数绑定可能只给第一个词，从原始消息补全
         full_args = self._get_command_args(event, "player")
         if full_args and (not player_name or len(full_args) > len(player_name)):
@@ -105,9 +104,7 @@ class HltvCsUnified(Star):
                 "      /player 载物\n\n"
                 "查询荣誉: /player <选手名> Trophies\n"
                 "示例: /player ZywOo Trophies\n"
-                "查询MVP:  /player <选手名> MVP\n"
-                "示例: /player ZywOo MVP"
-            )
+                            )
             return
 
         # 检测是否包含 Trophies 关键词
@@ -118,15 +115,6 @@ class HltvCsUnified(Star):
             pn = " ".join(parts[:-1])
             logger.info(f"荣誉查询: 选手={pn!r}")
             result = await lookup_player_trophies(pn, self._extra_nicknames)
-            yield event.plain_result(result)
-            return
-
-        # MVP 单独查询
-        from .core.player_lookup import lookup_player_trophies as _trophies_fn
-        if args_lower.endswith(" mvp") and len(parts) >= 2:
-            pn = " ".join(parts[:-1])
-            logger.info(f"MVP查询: 选手={pn!r}")
-            result = await _trophies_fn(pn, self._extra_nicknames, mode="mvps")
             yield event.plain_result(result)
             return
 
