@@ -417,11 +417,18 @@ def _parse_trophies(soup: BeautifulSoup) -> tuple:
 
 
 def _parse_mvps(soup: BeautifulSoup) -> tuple:
-    """解析 MVPs 区域：返回 (major_count, total_count, events)"""
+    """Parse MVPs section: returns (major_count, total_count, events)"""
     import re
     for section in soup.select("div.mvp-section"):
         text = section.get_text(strip=True)
-        if "mvp overview" in text.lower():
+
+        # Skip EVP section
+        if "evp overview" in text.lower():
+            continue
+
+        # Format 1: "MVP overview for ZywOo 3 Major MVPs 32 Total MVPs ..."
+        # Format 2: "All m0NESY's MVP medals" (no count info in text)
+        if "mvp overview" in text.lower() or "mvp medals" in text.lower() or "'s mvp medals" in text.lower():
             major_match = re.search(r"(\d+)\s*Major MVPs", text)
             total_match = re.search(r"(\d+)\s*Total MVPs", text)
             major_count = int(major_match.group(1)) if major_match else 0
@@ -435,17 +442,31 @@ def _parse_mvps(soup: BeautifulSoup) -> tuple:
                     if name and name not in events:
                         events.append(name)
 
+            # If counts not in text, infer from page elements
+            if total_count == 0 and events:
+                total_count = len(events)
+                major_el = soup.select_one(".majorMVP")
+                if major_el:
+                    m = re.search(r"(\d+)", major_el.get_text(strip=True))
+                    if m:
+                        major_count = int(m.group(1))
+                count_el = section.select_one(".mvp-count")
+                if count_el:
+                    try:
+                        total_count = int(count_el.get_text(strip=True))
+                    except ValueError:
+                        pass
+
             return (major_count, total_count, events)
 
     return (0, 0, [])
 
-
 def _parse_evps(soup: BeautifulSoup) -> tuple:
-    """解析 EVPs 区域：返回 (major_count, total_count, events)"""
+    """Parse EVPs section: returns (major_count, total_count, events)"""
     import re
     for section in soup.select("div.mvp-section"):
         text = section.get_text(strip=True)
-        if "evp overview" in text.lower():
+        if "evp overview" in text.lower() or "evp medals" in text.lower() or "'s evp medals" in text.lower():
             major_match = re.search(r"(\d+)\s*Major EVPs", text)
             total_match = re.search(r"(\d+)\s*Total EVPs", text)
             major_count = int(major_match.group(1)) if major_match else 0
@@ -459,11 +480,39 @@ def _parse_evps(soup: BeautifulSoup) -> tuple:
                     if name and name not in events:
                         events.append(name)
 
+            if total_count == 0 and events:
+                total_count = len(events)
+
             return (major_count, total_count, events)
 
     return (0, 0, [])
 
 
+def _parse_evps(soup: BeautifulSoup) -> tuple:
+    """Parse EVPs section: returns (major_count, total_count, events)"""
+    import re
+    for section in soup.select("div.mvp-section"):
+        text = section.get_text(strip=True)
+        if "evp overview" in text.lower() or "evp medals" in text.lower() or "'s evp medals" in text.lower():
+            major_match = re.search(r"(\d+)\s*Major EVPs", text)
+            total_match = re.search(r"(\d+)\s*Total EVPs", text)
+            major_count = int(major_match.group(1)) if major_match else 0
+            total_count = int(total_match.group(1)) if total_match else 0
+
+            events = []
+            for row in section.select(".trophy-row"):
+                event_el = row.select_one("div.trophy-event")
+                if event_el:
+                    name = event_el.get_text(strip=True)
+                    if name and name not in events:
+                        events.append(name)
+
+            if total_count == 0 and events:
+                total_count = len(events)
+
+            return (major_count, total_count, events)
+
+    return (0, 0, [])
 def _parse_top20(soup: BeautifulSoup) -> list:
     """解析 HLTV Top 20 排名"""
     rankings = []
