@@ -116,17 +116,20 @@ def _resolve_nickname(raw_input: str, extra_nicknames: Optional[dict] = None) ->
     return raw_input
 
 
-async def _search_player(name: str) -> Optional[Tuple[str, str]]:
-    """在 HLTV 搜索选手，返回 (player_id, display_name)"""
+async def _search_players(name: str) -> list[Tuple[str, str, str]]:
+    """Search HLTV for players, returns list of (player_id, display_name, team)"""
     url = f"{HLTV_SEARCH}{quote(name)}"
     try:
         html = await fetch_page(url)
     except Exception as exc:
-        logger.error(f"搜索失败: {exc!r}")
-        return None
+        logger.error(f"Search failed: {exc!r}")
+        return []
 
     soup = BeautifulSoup(html, "html.parser")
+    results: list[Tuple[str, str, str]] = []
+    seen_ids = set()
 
+    # Parse search result table rows
     for table in soup.find_all("table"):
         for row in table.select("tr"):
             cols = row.select("td")
@@ -137,20 +140,34 @@ async def _search_player(name: str) -> Optional[Tuple[str, str]]:
                 href = link.get("href", "")
                 m = re.search(r"/player/(\d+)/", href)
                 if m:
-                    player_id = m.group(1)
+                    pid = m.group(1)
+                    if pid in seen_ids:
+                        continue
+                    seen_ids.add(pid)
                     display_name = link.get_text(strip=True)
-                    return (player_id, display_name)
+                    # Try to get team name from the row
+                    team = ""
+                    if len(cols) >= 3:
+                        team_el = cols[2].select_one("a")
+                        if team_el:
+                            team = team_el.get_text(strip=True)
+                    results.append((pid, display_name, team))
 
-    all_links = soup.select("a[href*='/player/']")
-    for link in all_links:
-        href = link.get("href", "")
-        m = re.search(r"/player/(\d+)/", href)
-        text = link.get_text(strip=True)
-        if m and text:
-            return (m.group(1), text)
+    # Fallback: grab any player links
+    if not results:
+        all_links = soup.select("a[href*='/player/']")
+        for link in all_links:
+            href = link.get("href", "")
+            m = re.search(r"/player/(\d+)/", href)
+            text = link.get_text(strip=True)
+            if m and text and m.group(1) not in seen_ids:
+                seen_ids.add(m.group(1))
+                results.append((m.group(1), text, ""))
 
-    logger.warning("搜索结果中未找到选手链接")
-    return None
+    if not results:
+        logger.warning("No player links found in search results")
+
+    return results
 
 
 def _parse_player_stats(soup: BeautifulSoup, display_name: str) -> dict:
@@ -377,6 +394,140 @@ async def lookup_player_trophies(
         return _format_trophies_full(soup, display_name)
 
 
+async def lookup_player_full(
+    player_name: str,
+    extra_nicknames: Optional[dict] = None,
+    index: Optional[int] = None,
+) -> str:
+    """Unified player lookup: stats + trophies in one response.
+
+    If multiple players found and index is None, returns a numbered list.
+    If index is provided, selects that player.
+    Auto-selects if only one match.
+    """
+    player_name = _resolve_nickname(player_name, extra_nicknames)
+    logger.info(f"Unified player lookup: {player_name!r} index={index}")
+
+    # 1. Search
+    results = await _search_players(player_name)
+    if not results:
+        return f"❌ 未找到选手「{player_name}」，请检查名称后重试。"
+
+    # 2. Handle multiple results
+    if index is not None:
+        if index < 1 or index > len(results):
+            return f"❌ 序号 {index} 无效，有效范围 1-{len(results)}。"
+        selected = results[index - 1]
+    elif len(results) == 1:
+        selected = results[0]
+    else:
+        # Return selection list
+        lines = [f"🔍 找到 {len(results)} 个匹配的选手：\n"]
+        for i, (pid, dname, team) in enumerate(results, 1):
+            line = f"  {i}. {dname}"
+            if team:
+                line += f"  [{team}]"
+            lines.append(line)
+        lines.append(f"\n💡 输入 /player {player_name} <序号> 选择，如 /player {player_name} 1")
+        return _sanitize("\n".join(lines))
+
+    pid, display_name, _ = selected
+    logger.info(f"Selected: {display_name} (ID: {pid})")
+
+    # 3. Fetch player page
+    try:
+        slug = display_name.replace(" ", "-").replace("'", "").lower()
+        html = await fetch_page(f"{HLTV_PLAYER}{pid}/{slug}")
+    except Exception as exc:
+        logger.error(f"Failed to fetch player page: {exc!r}")
+        return "❌ 获取选手数据失败，请稍后重试。"
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 4. Parse stats
+    stats = _parse_player_stats(soup, display_name)
+    if not stats.get("rating"):
+        return f"❌ 未能解析选手「{display_name}」的数据，HLTV 页面结构可能已更新。"
+
+    # 5. Build unified output
+    lines = []
+
+    # ── Section 1: Basic info + Rating ──
+    name = stats.get("name", "Unknown")
+    age = stats.get("age", "")
+    team = stats.get("team", "")
+    prize = stats.get("prize_money", "")
+
+    lines.append(f"🎮 {name}")
+
+    info_parts = []
+    if age:
+        info_parts.append(f"年龄: {age}")
+    if team:
+        info_parts.append(f"战队: {team}")
+    if info_parts:
+        lines.append("  " + " | ".join(info_parts))
+    if prize:
+        lines.append(f"  总奖金: {prize}")
+
+    rating = stats.get("rating", "")
+    period = stats.get("period", "")
+    if rating:
+        header = f"\n📊 Rating 3.0: {rating}"
+        if period:
+            header += f" {period}"
+        lines.append(header)
+
+    bd = stats.get("breakdown", {})
+    if bd:
+        lines.append("\n📈 Rating Breakdown")
+        max_label = max(len(k) for k in bd.keys()) if bd else 10
+        for key in BREAKDOWN_KEYS:
+            val = bd.get(key, "-")
+            if val != "-":
+                num = _bar_length(val)
+                bar = "█" * num + "░" * (10 - num)
+                lines.append(f"{key:<{max_label}} [{bar}] {val}")
+
+    all_time = stats.get("all_time", {})
+    if all_time:
+        lines.append("\n📋 全时期统计")
+        for key, val in all_time.items():
+            lines.append(f"  • {key}: {val}")
+
+    # ── Section 2: Trophies ──
+    t_major, t_notable, t_events = _parse_trophies(soup)
+    if t_events:
+        lines.append(f"\n🥇 团队奖杯: {t_major} Major + {t_notable} 重要赛事")
+        for ev in t_events:
+            lines.append(f"  • {ev}")
+
+    # ── Section 3: MVPs ──
+    m_major, m_total, m_events = _parse_mvps(soup)
+    if m_events:
+        lines.append(f"\n⭐ MVP 奖章: {m_major} Major MVP + 共 {m_total} 个")
+        for ev in m_events:
+            lines.append(f"  • {ev}")
+
+    # ── Section 4: EVPs ──
+    e_major, e_total, e_events = _parse_evps(soup)
+    if e_events:
+        lines.append(f"\n📌 EVP 记录: {e_major} Major EVP + 共 {e_total} 个")
+        for ev in e_events:
+            lines.append(f"  • {ev}")
+
+    # ── Section 5: Top20 ──
+    top20 = _parse_top20(soup)
+    if top20:
+        lines.append("\n📊 HLTV Top 20 排名:")
+        for rank, year in top20:
+            medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "  "
+            lines.append(f"  {medal} #{rank} — {year}")
+
+    return _sanitize("\n".join(lines))
+
+
+
 def _parse_trophies(soup: BeautifulSoup) -> tuple:
     """解析 Trophies 区域：返回 (major_count, notable_count, events)"""
     # 找到包含 "Trophy overview" 的 trophy-section
@@ -488,31 +639,6 @@ def _parse_evps(soup: BeautifulSoup) -> tuple:
     return (0, 0, [])
 
 
-def _parse_evps(soup: BeautifulSoup) -> tuple:
-    """Parse EVPs section: returns (major_count, total_count, events)"""
-    import re
-    for section in soup.select("div.mvp-section"):
-        text = section.get_text(strip=True)
-        if "evp overview" in text.lower() or "evp medals" in text.lower() or "'s evp medals" in text.lower():
-            major_match = re.search(r"(\d+)\s*Major EVPs", text)
-            total_match = re.search(r"(\d+)\s*Total EVPs", text)
-            major_count = int(major_match.group(1)) if major_match else 0
-            total_count = int(total_match.group(1)) if total_match else 0
-
-            events = []
-            for row in section.select(".trophy-row"):
-                event_el = row.select_one("div.trophy-event")
-                if event_el:
-                    name = event_el.get_text(strip=True)
-                    if name and name not in events:
-                        events.append(name)
-
-            if total_count == 0 and events:
-                total_count = len(events)
-
-            return (major_count, total_count, events)
-
-    return (0, 0, [])
 def _parse_top20(soup: BeautifulSoup) -> list:
     """解析 HLTV Top 20 排名"""
     rankings = []

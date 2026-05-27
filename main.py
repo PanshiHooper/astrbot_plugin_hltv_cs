@@ -2,7 +2,7 @@
 
 统一CS2查询插件，整合以下功能：
   /match        — 查询CS2比赛（正在进行/已结束/即将开始）
-  /player <名>  — 查询HLTV选手数据（Rating 3.0及分项）
+  /player <名> [序号] — 查询选手数据+荣誉（重名时列出选择）
   /team <战队>  — 查询HLTV战队信息（队员+近两年成绩）
   /team <战队> <地图> — 查询战队指定地图近3个月数据
 
@@ -15,7 +15,7 @@ from astrbot.api import logger
 
 from .core.http_client import set_request_delay
 from .core.match_fetcher import MatchFetcher
-from .core.player_lookup import lookup_player, lookup_player_trophies
+from .core.player_lookup import lookup_player_full
 from .core.team_lookup import lookup_team, lookup_team_map, ALIAS_TO_STANDARD
 
 
@@ -87,11 +87,11 @@ class HltvCsUnified(Star):
 
     @filter.command("player")
     async def cmd_player(self, event: AstrMessageEvent, player_name: str = ""):
-        """查询HLTV CS2选手数据或荣誉
+        """查询HLTV CS2选手数据+荣誉
 
-        /player <选手名>           → 选手 Rating 数据
-        /player <选手名> Trophies  → 奖杯、MVP、EVP、Top20
-"""
+        /player <选手名>        → 自动匹配（唯一时直接显示，重名时列出选择）
+        /player <选手名> <序号>  → 选择第N个匹配选手
+        """
         # AstrBot 参数绑定可能只给第一个词，从原始消息补全
         full_args = self._get_command_args(event, "player")
         if full_args and (not player_name or len(full_args) > len(player_name)):
@@ -101,12 +101,11 @@ class HltvCsUnified(Star):
         if not player_name:
             yield event.plain_result(
                 "❌ 请提供选手名称或外号。\n\n"
-                "查询数据: /player <选手名>\n"
+                "查询: /player <选手名>\n"
                 "示例: /player ZywOo\n"
-                "      /player 载物\n\n"
-                "查询荣誉: /player <选手名> Trophies\n"
-                "示例: /player ZywOo Trophies\n"
-                            )
+                "      /player 载物\n"
+                "      /player ZywOo 2  (选择第2个)"
+            )
             return
 
         if len(player_name) > self.MAX_INPUT_LENGTH:
@@ -115,19 +114,15 @@ class HltvCsUnified(Star):
             )
             return
 
-        # 检测是否包含 Trophies 关键词
-        args_lower = player_name.lower().strip()
+        # 解析序号（最后一个词如果是数字则为序号）
         parts = player_name.strip().split()
+        index = None
+        if len(parts) >= 2 and parts[-1].isdigit():
+            index = int(parts[-1])
+            player_name = " ".join(parts[:-1])
+            logger.info(f"检测到序号 {index}，选手名={player_name!r}")
 
-        if args_lower.endswith(" trophies") and len(parts) >= 2:
-            pn = " ".join(parts[:-1])
-            logger.info(f"荣誉查询: 选手={pn!r}")
-            result = await lookup_player_trophies(pn, self._extra_nicknames)
-            yield event.plain_result(result)
-            return
-
-        # 默认: 选手数据查询
-        result = await lookup_player(player_name, self._extra_nicknames)
+        result = await lookup_player_full(player_name, self._extra_nicknames, index)
         yield event.plain_result(result)
 
     # ── /team <战队名> [地图名] ────────────────────────────────────────
