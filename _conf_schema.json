@@ -1,0 +1,30 @@
+{
+  "enabled": {
+    "description": "是否启用HLTV-CS统一插件",
+    "type": "bool",
+    "default": true
+  },
+  "cache_ttl": {
+    "description": "比赛数据缓存时间（秒），降低可加快比分更新",
+    "type": "int",
+    "default": 60,
+    "hint": "范围 10-600 秒"
+  },
+  "request_delay": {
+    "description": "请求间隔（秒），防止请求过快被网站限流",
+    "type": "float",
+    "default": 1.5,
+    "hint": "范围 0.5-5.0 秒，不建议低于 1.0"
+  },
+  "use_hltv": {
+    "description": "是否启用HLTV补充数据（可补充Liquipedia遗漏的比赛）",
+    "type": "bool",
+    "default": true
+  },
+  "custom_nicknames": {
+    "description": "自定义选手外号（一行一个，格式：外号=选手名）",
+    "type": "text",
+    "default": "",
+    "hint": "例如：大番薯=ZywOo\n森破=s1mple\n小孩=m0NESY"
+  }
+}

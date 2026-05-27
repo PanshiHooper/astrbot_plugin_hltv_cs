@@ -1,0 +1,8 @@
+name: hltv_cs_unified
+display_name: HLTV-CS 统一查询
+short_desc: CS2比赛追踪 /match、选手数据 /player、战队信息 /team
+desc: >
+  统一CS2查询插件，整合比赛追踪（/match）、选手数据（/player）、战队信息（/team）。
+  数据来源Liquipedia与HLTV。
+author: PanshiHooper
+version: 1.0.0
