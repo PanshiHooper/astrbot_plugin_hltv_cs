@@ -22,6 +22,8 @@ from .core.team_lookup import lookup_team, lookup_team_map, ALIAS_TO_STANDARD
 class HltvCsUnified(Star):
     """CS2 HLTV 统一查询插件"""
 
+    MAX_INPUT_LENGTH = 100  # 选手/战队名最大长度
+
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = config or {}
@@ -30,7 +32,7 @@ class HltvCsUnified(Star):
         request_delay = float(self.config.get("request_delay", 1.5))
         set_request_delay(request_delay)
 
-        cache_ttl = int(self.config.get("cache_ttl", 60))
+        cache_ttl = max(10, int(self.config.get("cache_ttl", 60)))
         use_hltv = bool(self.config.get("use_hltv", True))
         self._fetcher = MatchFetcher(cache_ttl=cache_ttl, use_hltv=use_hltv)
         self._extra_nicknames: dict = self._parse_nicknames(
@@ -107,6 +109,12 @@ class HltvCsUnified(Star):
                             )
             return
 
+        if len(player_name) > self.MAX_INPUT_LENGTH:
+            yield event.plain_result(
+                f"❌ 输入过长（>{self.MAX_INPUT_LENGTH}字符），请缩短后重试。"
+            )
+            return
+
         # 检测是否包含 Trophies 关键词
         args_lower = player_name.lower().strip()
         parts = player_name.strip().split()
@@ -147,6 +155,12 @@ class HltvCsUnified(Star):
                 "示例: /team G2 inferno\n"
                 "      /team falcons dust2\n"
                 "      /team navi 小镇"
+            )
+            return
+
+        if len(team_name) > self.MAX_INPUT_LENGTH:
+            yield event.plain_result(
+                f"❌ 输入过长（>{self.MAX_INPUT_LENGTH}字符），请缩短后重试。"
             )
             return
 

@@ -104,7 +104,7 @@ async def fetch_page(
         async with httpx.AsyncClient(
             headers=HEADERS,
             follow_redirects=True,
-            timeout=timeout,
+            timeout=httpx.Timeout(timeout),
         ) as client:
             resp = await client.get(url)
             if resp.status_code == 403:

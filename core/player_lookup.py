@@ -6,12 +6,22 @@
 import re
 import logging
 from typing import Optional, Tuple
+from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
 from .http_client import fetch_page
 
 logger = logging.getLogger("hltv_cs_unified.player_lookup")
+# ── 安全过滤 ──
+import re as _re
+
+_CONTROL_RE = _re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+def _sanitize(text: str) -> str:
+    """移除控制字符，防止输出污染"""
+    return _CONTROL_RE.sub("", text)
+
 
 HLTV_SEARCH = "https://www.hltv.org/search?query="
 HLTV_PLAYER = "https://www.hltv.org/player/"
@@ -108,7 +118,7 @@ def _resolve_nickname(raw_input: str, extra_nicknames: Optional[dict] = None) ->
 
 async def _search_player(name: str) -> Optional[Tuple[str, str]]:
     """在 HLTV 搜索选手，返回 (player_id, display_name)"""
-    url = f"{HLTV_SEARCH}{name}"
+    url = f"{HLTV_SEARCH}{quote(name)}"
     try:
         html = await fetch_page(url)
     except Exception as exc:
@@ -272,7 +282,7 @@ def _format_stats(stats: dict) -> str:
         for key, val in all_time.items():
             lines.append(f"  • {key}: {val}")
 
-    return "\n".join(lines)
+    return _sanitize("\n".join(lines))
 
 
 async def lookup_player(
@@ -513,9 +523,9 @@ def _format_trophies_full(soup: BeautifulSoup, name: str) -> str:
         lines.append("")
 
     if not any([t_events, m_events, e_events, top20]):
-        return f"❌ 未能解析选手「{name}」的荣誉数据。"
+        return _sanitize(f"❌ 未能解析选手「{name}」的荣誉数据。")
 
-    return "\n".join(lines)
+    return _sanitize("\n".join(lines))
 
 
 def _format_mvps(soup: BeautifulSoup, name: str) -> str:

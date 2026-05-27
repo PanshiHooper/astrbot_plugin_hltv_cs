@@ -14,6 +14,15 @@ from bs4 import BeautifulSoup
 from .http_client import fetch_page
 
 logger = logging.getLogger("hltv_cs_unified.team_lookup")
+# ── 安全过滤 ──
+import re as _re
+
+_CONTROL_RE = _re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+def _sanitize(text: str) -> str:
+    """移除控制字符，防止输出污染"""
+    return _CONTROL_RE.sub("", text)
+
 
 HLTV_BASE = "https://www.hltv.org"
 HLTV_SEARCH = f"{HLTV_BASE}/search"
@@ -317,7 +326,7 @@ async def lookup_team(team_name: str) -> str:
         lines.append("\n🏆 近两年大赛成绩: 未能解析")
 
     lines.append(f"\n🔗 {team_url}")
-    return "\n".join(lines)
+    return _sanitize("\n".join(lines))
 
 
 # ── 地图名别名 ──────────────────────────────────────────────────────────
@@ -416,7 +425,7 @@ async def lookup_team_map(team_name: str, map_name: str) -> str:
         )
 
     # 4. 解析详细数据
-    return _format_map_stats(matched, display_name, resolved_map)
+    return _sanitize(_format_map_stats(matched, display_name, resolved_map))
 
 
 def _format_map_stats(

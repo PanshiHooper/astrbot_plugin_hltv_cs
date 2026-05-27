@@ -452,4 +452,4 @@ class MatchFetcher:
             )
 
         lines.append("\n[SRC] 数据来源: Liquipedia Counter-Strike")
-        return "\n".join(lines)
+        return _sanitize("\n".join(lines))
