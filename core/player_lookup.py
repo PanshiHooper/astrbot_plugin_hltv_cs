@@ -361,6 +361,8 @@ async def lookup_player_trophies(
 
     if mode == "evps":
         return _format_evps(soup, display_name)
+    elif mode == "mvps":
+        return _format_mvps(soup, display_name)
     else:
         return _format_trophies_full(soup, display_name)
 
@@ -512,6 +514,22 @@ def _format_trophies_full(soup: BeautifulSoup, name: str) -> str:
 
     if not any([t_events, m_events, e_events, top20]):
         return f"❌ 未能解析选手「{name}」的荣誉数据。"
+
+    return "\n".join(lines)
+
+
+def _format_mvps(soup: BeautifulSoup, name: str) -> str:
+    """格式化 MVPs 输出"""
+    lines = [f"⭐ {name} MVP 奖章\n"]
+
+    m_major, m_total, m_events = _parse_mvps(soup)
+    if m_events:
+        lines.append(f"⭐ MVP 奖章: {m_major} Major MVP + 共 {m_total} 个")
+        for ev in m_events:
+            lines.append(f"  • {ev}")
+        lines.append("")
+    else:
+        lines.append("⭐ 该选手暂无 MVP 记录。")
 
     return "\n".join(lines)
 
