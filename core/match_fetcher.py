@@ -47,6 +47,15 @@ PLACEHOLDER_KEYWORDS = ("1stplace", "2ndplace", "3rdplace", "4thplace", "5thplac
 
 logger = logging.getLogger("hltv_cs_unified.match_fetcher")
 
+# ── 安全过滤 ──
+import re as _re
+
+_CONTROL_RE = _re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+def _sanitize(text: str) -> str:
+    """移除控制字符，防止输出污染"""
+    return _CONTROL_RE.sub("", text)
+
 
 def _today_bounds_bj() -> Tuple[float, float]:
     """返回今天北京时间的起止Unix时间戳"""
